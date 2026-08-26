@@ -82,6 +82,9 @@ a{color:inherit}
 .searchbar input{flex:1;border:none;outline:none;background:none;font-size:1.0625rem;
   font-family:inherit;color:var(--ink);min-width:0}
 .searchbar input::placeholder{color:#96A5A3}
+.searchbar input::-webkit-search-cancel-button,
+.searchbar input::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
+.searchbar input[type=search]{appearance:none;-webkit-appearance:none}
 .clearbtn{flex:none;color:var(--stone);font-size:1.25rem;line-height:1;padding:0 2px;display:none}
 .clearbtn.on{display:block}
 
@@ -1537,22 +1540,36 @@ $('#anchorChips').innerHTML=ANCHORS.map((a,i)=>`<button class="chip" data-anchor
 const CATCOLOR={"올레길":"#6F8E36","자연":"#2E7A86","바다":"#14636E","오름":"#4E6626",
   "카페·맛집":"#B34F2B","박물관·전시":"#5E4F78","기념품·공방":"#A0522D","시장":"#C08A2E","온천·휴식":"#3B5871"};
 
+function matchScore(p,q){
+  const has=t=>(t||'').toLowerCase().includes(q);
+  if(has(p.n)) return 0;                 // 이름에 있으면 가장 먼저
+  if(has(p.mn)) return 1;                // 메뉴
+  if(has(p.c)||has(p.r)) return 2;       // 분류·지역
+  if(has(p.t)) return 3;                 // 팁
+  if(has(p.d)) return 4;                 // 설명에만 스쳐 나오는 경우
+  const lab=(p.m||[]).map(k=>MOODS.find(m=>m.k===k)?.l||'').join(' ');
+  if(has(lab)||has(WALK[p.w].l)||has(p.solo)) return 5;
+  return -1;
+}
 function filtered(){
   const q=query.trim().toLowerCase();
   const searching=!!q;
   let list=PLACES.filter(p=>{
     if(!searching&&fRegion&&p.r!==fRegion) return false;
     if(!searching&&fCat&&p.c!==fCat) return false;
-    if(!q) return true;
-    const hay=[p.n,p.r,p.c,p.d||'',p.t||'',p.a||'',p.mn||'',p.solo||'',...(p.m||[]).map(k=>MOODS.find(m=>m.k===k)?.l||''),WALK[p.w].l].join(' ').toLowerCase();
-    return hay.includes(q);
+    if(!searching) return true;
+    return matchScore(p,q)>=0;
   });
-  if(userPos) list.sort((a,b)=>(a.la?dist(userPos.la,userPos.lo,a.la,a.lo):1e6)-(b.la?dist(userPos.la,userPos.lo,b.la,b.lo):1e6));
+  const d=p=>userPos&&p.la?dist(userPos.la,userPos.lo,p.la,p.lo):1e6;
+  if(searching) list.sort((a,b)=>(matchScore(a,q)-matchScore(b,q))||(d(a)-d(b)));
+  else if(userPos) list.sort((a,b)=>d(a)-d(b));
   return list;
 }
 function renderPlaces(){
   const list=filtered();
-  $('#count').textContent = list.length ? (userPos?`${list.length}곳 · ${posLabel} 기준 가까운 순`:`${list.length}곳`) : '';
+  $('#count').textContent = !list.length ? ''
+  : query.trim() ? `${list.length}곳 · 이름이 맞는 곳부터`
+  : userPos ? `${list.length}곳 · ${posLabel} 기준 가까운 순` : `${list.length}곳`;
   $('#placeList').innerHTML = list.length ? list.map(cardHTML).join('')
     : `<div class="empty"><strong>찾는 곳이 없네요</strong>다른 말로 검색해 보시거나,<br>위 필터를 지우고 다시 찾아보세요.</div>`;
   document.body.classList.toggle('searching',!!query.trim());
@@ -1749,7 +1766,13 @@ $('#q').addEventListener('input',e=>{
 });
 $('#q').addEventListener('focus',()=>document.body.classList.add('typing'));
 $('#q').addEventListener('blur',()=>document.body.classList.remove('typing'));
-$('#q').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault(); $('#q').blur();} });
+let composing=false;
+$('#q').addEventListener('compositionstart',()=>{composing=true;});
+$('#q').addEventListener('compositionend',()=>{composing=false; query=$('#q').value; renderPlaces();});
+$('#q').addEventListener('keydown',e=>{
+  if(composing||e.isComposing||e.keyCode===229) return;   // 한글 조합 중에는 손대지 않습니다
+  if(e.key==='Enter'){ e.preventDefault(); $('#q').blur(); }
+});
 $('#clear').addEventListener('mousedown',e=>e.preventDefault());  // 포커스 튐 방지
 $('#clear').addEventListener('click',endSearch);
 </script>
